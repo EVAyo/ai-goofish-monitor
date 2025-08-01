@@ -32,6 +32,8 @@
 
 ### 第 1 步: 环境准备
 
+> ⚠️ **Python版本要求**: 本地部署调试时建议使用 Python 3.10 或更高版本。较低版本的Python可能会导致依赖包安装失败或运行时错误（如 `ModuleNotFoundError: No module named 'PIL'`）。
+
 克隆本项目到本地:
 
 ```bash
@@ -47,8 +49,9 @@ pip install -r requirements.txt
 
 ### 第 2 步: 基础配置
 
-1. **配置环境变量**: 复制`.env.example`文件并命名为`.env`，并修改里面的内容。
-Windows使用命令行：
+1. **配置环境变量**: 复制`.env.example`文件并命名为`.env`，并修改里面的内容。  
+
+    Windows使用命令行：
 
     ```cmd
     copy .env.example .env
@@ -65,9 +68,9 @@ Windows使用命令行：
     | 环境变量 | 说明 | 是否必填 | 注意事项 |
     | :--- | :--- | :--- | :--- |
     | `OPENAI_API_KEY` | 你的AI模型服务商提供的API Key。 | 是 | 对于某些本地或特定代理的服务，此项可能为可选。 |
-    | `OPENAI_BASE_URL` | AI模型的API接口地址，必须兼容OpenAI格式。 | 是 | 请填写API的基础路径，例如 `https://api.example.com/v1`。 |
-    | `OPENAI_MODEL_NAME` | 你要使用的具体模型名称。 | 是 | **必须**选择一个支持图片分析的多模态模型，如 `gpt-4o`, `gemini-1.5-pro` 等。 |
-    | `PROXY_URL` | (可选) 为AI请求配置的HTTP/S代理。 | 否 | 支持 `http://` 和 `socks5://` 格式。例如 `http://127.0.0.1:7890`。 |
+    | `OPENAI_BASE_URL` | AI模型的API接口地址，必须兼容OpenAI格式。 | 是 | 请填写API的基础路径，例如 `https://ark.cn-beijing.volces.com/api/v3/`。 |
+    | `OPENAI_MODEL_NAME` | 你要使用的具体模型名称。 | 是 | **必须**选择一个支持图片分析的多模态模型，如 `doubao-seed-1-6-250615`, `gemini-2.5-pro` 等。 |
+    | `PROXY_URL` | (可选) 需要翻墙时配置的HTTP/S代理。 | 否 | 支持 `http://` 和 `socks5://` 格式。例如 `http://127.0.0.1:7890`。 |
     | `NTFY_TOPIC_URL` | (可选) [ntfy.sh](https://ntfy.sh/) 的主题URL，用于发送通知。 | 否 | 如果留空，将不会发送 ntfy 通知。 |
     | `GOTIFY_URL` | (可选) Gotify 服务地址。 | 否 | 例如 `https://push.example.de`。 |
     | `GOTIFY_TOKEN` | (可选) Gotify 应用的 Token。 | 否 | |
@@ -77,29 +80,39 @@ Windows使用命令行：
     | `WEBHOOK_METHOD` | (可选) Webhook 请求方法。 | 否 | 支持 `GET` 或 `POST`，默认为 `POST`。 |
     | `WEBHOOK_HEADERS` | (可选) Webhook 的自定义请求头。 | 否 | 必须是有效的 JSON 字符串，例如 `'{"Authorization": "Bearer xxx"}'`。 |
     | `WEBHOOK_CONTENT_TYPE` | (可选) POST 请求的内容类型。 | 否 | 支持 `JSON` 或 `FORM`，默认为 `JSON`。 |
-    | `WEBHOOK_QUERY_PARAMETERS` | (可选) GET 请求的查询参数。 | 否 | JSON 字符串，支持 `${title}` 和 `${content}` 占位符。 |
-    | `WEBHOOK_BODY` | (可选) POST 请求的请求体。 | 否 | JSON 字符串，支持 `${title}` 和 `${content}` 占位符。 |
+    | `WEBHOOK_QUERY_PARAMETERS` | (可选) GET 请求的查询参数。 | 否 | JSON 字符串，支持 `{{title}}` 和 `{{content}}` 占位符。 |
+    | `WEBHOOK_BODY` | (可选) POST 请求的请求体。 | 否 | JSON 字符串，支持 `{{title}}` 和 `{{content}}` 占位符。 |
     | `LOGIN_IS_EDGE` | 是否使用 Edge 浏览器进行登录和爬取。 | 否 | 默认为 `false`，使用 Chrome/Chromium。 |
     | `PCURL_TO_MOBILE` | 是否在通知中将电脑版商品链接转换为手机版。 | 否 | 默认为 `true`。 |
     | `RUN_HEADLESS` | 是否以无头模式运行爬虫浏览器。 | 否 | 默认为 `true`。在本地调试遇到验证码时可设为 `false` 手动处理。**Docker部署时必须为 `true`**。 |
     | `AI_DEBUG_MODE` | 是否开启AI调试模式。 | 否 | 默认为 `false`。开启后会在控制台打印详细的AI请求和响应日志。 |
     | `SERVER_PORT` | Web UI服务的运行端口。 | 否 | 默认为 `8000`。 |
 
-2.  **获取登录状态 (重要!)**: 为了让爬虫能够以登录状态访问闲鱼，必须先提供有效的登录凭证。我们推荐使用Web UI来完成此操作：
+    > 💡 **调试建议**: 如果在配置AI API时遇到404错误，建议先使用阿里云或火山提供的API进行调试，确保基础功能正常后再尝试其他API提供商。某些API提供商可能存在兼容性问题或需要特殊的配置。
+
+2. **获取登录状态 (重要!)**: 为了让爬虫能够以登录状态访问闲鱼，必须先提供有效的登录凭证。我们推荐使用Web UI来完成此操作：
 
     **推荐方式：通过 Web UI 更新**
-    1.  先跳过此步骤，直接执行第3步启动Web服务。
-    2.  打开Web UI后，进入 **“系统设置”** 页面。
-    3.  找到 “登录状态文件”，点击 **“手动更新”** 按钮。
-    4.  按照弹窗内的详细指引，在您自己的电脑上登录闲鱼，并复制所需的登录信息粘贴到Web UI中即可。
-    
+    1. 先跳过此步骤，直接执行第3步启动Web服务。
+    2. 打开Web UI后，进入 **"系统设置"** 页面。
+    3. 找到 "登录状态文件"，点击 **"手动更新"** 按钮。
+    4. 按照弹窗内的详细指引操作：
+       - 在您的个人电脑上，使用Chrome浏览器安装[闲鱼登录状态提取扩展](https://chromewebstore.google.com/detail/xianyu-login-state-extrac/eidlpfjiodpigmfcahkmlenhppfklcoa)
+       - 打开并登录闲鱼官网
+       - 登录成功后，点击浏览器工具栏中的扩展图标
+       - 点击"提取登录状态"按钮获取登录信息
+       - 点击"复制到剪贴板"按钮
+       - 将复制的内容粘贴到Web UI中保存即可
+
     这种方式无需在服务器上运行带图形界面的程序，最为便捷。
 
     **备用方式：运行登录脚本**
     如果您可以在本地或带桌面的服务器上运行程序，也可以使用传统的脚本方式：
+
     ```bash
     python login.py
     ```
+
     运行后会弹出一个浏览器窗口，请使用**手机闲鱼App扫描二维码**完成登录。成功后，程序会自动关闭，并在项目根目录生成一个 `xianyu_state.json` 文件。
 
 ### 第 3 步: 启动 Web 服务
@@ -136,11 +149,19 @@ python web_server.py
 
 3. **创建 `.env` 文件**: 参考 **[快速开始](#-快速开始-web-ui-推荐)** 部分的说明，在项目根目录创建并填写 `.env` 文件。
 
-4.  **获取登录状态 (关键步骤!)**: Docker容器内无法进行扫码登录。请在**启动容器后**，通过访问Web UI来设置登录状态：
-    1.  （在宿主机上）执行 `docker-compose up -d` 启动服务。
-    2.  在浏览器中打开 `http://127.0.0.1:8000` 访问Web UI。
-    3.  进入 **“系统设置”** 页面，点击 **“手动更新”** 按钮。
-    4.  按照弹窗内的指引，在你的**本地电脑浏览器**中获取登录信息，并粘贴到Web UI中保存。`xianyu_state.json` 文件会被自动创建在Docker容器内正确的共享卷位置。
+4. **获取登录状态 (关键步骤!)**: Docker容器内无法进行扫码登录。请在**启动容器后**，通过访问Web UI来设置登录状态：
+    1. （在宿主机上）执行 `docker-compose up -d` 启动服务。
+    2. 在浏览器中打开 `http://127.0.0.1:8000` 访问Web UI。
+    3. 进入 **"系统设置"** 页面，点击 **"手动更新"** 按钮。
+    4. 按照弹窗内的指引操作：
+       - 在您的个人电脑上，使用Chrome浏览器安装[闲鱼登录状态提取扩展](https://chromewebstore.google.com/detail/xianyu-login-state-extrac/eidlpfjiodpigmfcahkmlenhppfklcoa)
+       - 打开并登录闲鱼官网
+       - 登录成功后，点击浏览器工具栏中的扩展图标
+       - 点击"提取登录状态"按钮获取登录信息
+       - 点击"复制到剪贴板"按钮
+       - 将复制的内容粘贴到Web UI中保存即可
+
+> ℹ️ **关于Python版本**: 使用Docker部署时，项目使用的是Dockerfile中指定的Python 3.11版本，无需担心本地Python版本兼容性问题。
 
 ### 第 2 步: 运行 Docker 容器
 
@@ -155,6 +176,8 @@ docker-compose up --build -d
 这会以后台模式启动服务。`docker-compose` 会自动读取 `.env` 文件和 `docker-compose.yaml` 的配置，并根据其内容来创建和启动容器。
 
 如果容器内遇到网络问题，请自行排查或使用代理。
+
+> ⚠️ **OpenWrt 环境部署注意事项**: 如果您在 OpenWrt 路由器上部署此应用，可能会遇到 DNS 解析问题。这是因为 Docker Compose 创建的默认网络可能无法正确继承 OpenWrt 的 DNS 设置。如果遇到 `ERR_CONNECTION_REFUSED` 错误，请检查您的容器网络配置，可能需要手动配置 DNS 或调整网络模式以确保容器可以正常访问外部网络。
 
 ### 第 3 步: 访问和管理
 
@@ -244,18 +267,71 @@ graph TD
         2. 将整个项目文件夹（包含 `.env` 和 `xianyu_state.json`）上传到群晖的某个目录下。
         3. 在群晖的 Container Manager (或旧版 Docker) 中，使用 `docker-compose up -d` 命令（通过 SSH 或任务计划）来启动项目。确保 `docker-compose.yaml` 中的 volume 映射路径正确指向你在群晖上的项目文件夹。
 
-6  **Q: 如何配置使用 Gemini / Qwen / Grok 或其他非 OpenAI 的大语言模型？**
+6. **Q: 如何配置使用 Gemini / Qwen / Grok 或其他非 OpenAI 的大语言模型？**
     ***A:** 本项目理论上支持任何提供 OpenAI 兼容 API 接口的模型。关键在于正确配置 `.env` 文件中的三个变量：
         *   `OPENAI_API_KEY`: 你的模型服务商提供的 API Key。
         *`OPENAI_BASE_URL`: 模型服务商提供的 API-Compatible Endpoint 地址。请务必查阅你所使用模型的官方文档，通常格式为 `https://api.your-provider.com/v1` (注意，末尾不需要 `/chat/completions`)。
         *   `OPENAI_MODEL_NAME`: 你要使用的具体模型名称，需要模型支持图片识别，例如 `gemini-2.5-flash`。
-    *   **示例:** 如果你的服务商文档说 Completions 接口是 `https://xx.xx.com/v1/chat/completions`，那么 `OPENAI_BASE_URL` 就应该填 `https://xx.xx.com/v1`。
+    - **示例:** 如果你的服务商文档说 Completions 接口是 `https://xx.xx.com/v1/chat/completions`，那么 `OPENAI_BASE_URL` 就应该填 `https://xx.xx.com/v1`。
 
-7  **Q: 运行一段时间后被闲鱼检测到，提示“异常流量”或需要滑动验证？**
+7. **Q: 运行一段时间后被闲鱼检测到，提示“异常流量”或需要滑动验证？**
     ***A:** 这是闲鱼的反爬虫机制。为了降低被检测的风险，可以尝试以下方法：
         *   **关闭无头模式:** 在 `.env` 文件中设置 `RUN_HEADLESS=false`。这样浏览器会以有界面的方式运行，当出现滑动验证码时，你可以手动完成验证，程序会继续执行。
         ***降低监控频率:** 避免同时运行大量监控任务。
         *   **使用干净的网络环境:** 频繁爬取可能导致 IP 被临时标记。
+8. **Q: pyzbar 在 Windows 上安装失败怎么办？**
+    - **A:** pyzbar 在 Windows 上需要额外的 zbar 动态链接库支持。
+    - **解决方案 (Windows):**
+        - **方法1 (推荐):** 使用 Chocolatey 安装：
+
+            ```cmd
+            choco install zbar
+            ```
+
+        - **方法2:** 手动下载并添加到 PATH：
+            1. 从 [zbar releases](https://github.com/NaturalHistoryMuseum/pyzbar/releases) 下载对应版本的 `libzbar-64.dll`
+            2. 将文件放到 Python 安装目录或添加到系统 PATH
+        - **方法3:** 使用 conda 安装：
+
+            ```cmd
+            conda install -c conda-forge zbar
+            ```
+
+    - **Linux 用户:** 直接安装系统包即可：
+
+        ```bash
+        # Ubuntu/Debian
+        sudo apt-get install libzbar0
+        
+        # CentOS/RHEL
+        sudo yum install zbar
+        
+        # Arch Linux
+        sudo pacman -S zbar
+        ```
+
+9. **Q: 运行 `login.py` 时提示 `ModuleNotFoundError: No module named 'PIL'` 是什么原因？**
+    - **A:** 这个错误通常是因为Python版本过低或者依赖包安装不完整导致的。本项目推荐使用 Python 3.10 或更高版本。
+    - **解决方案:**
+        - 确保使用 Python 3.10+ 版本运行项目
+        - 重新安装依赖包：
+
+            ```bash
+            pip install -r requirements.txt
+            ```
+
+        - 如果问题依旧，可以尝试单独安装 Pillow 包：
+
+            ```bash
+            pip install Pillow
+            ```
+            
+10. **Q: 配置AI API时遇到404错误怎么办？**
+    - **A:** 如果在配置AI API时遇到404错误，建议先使用阿里云提供的API进行调试，确保基础功能正常后再尝试其他API提供商。某些API提供商可能存在兼容性问题或需要特殊的配置。请检查：
+        - 确认 `OPENAI_BASE_URL` 地址填写正确，确保该服务正在正常运行。
+        - 检查网络连接是否正常。
+        - 确认API Key是否正确且具有访问权限。
+        - 某些API提供商可能需要特殊的请求头或参数配置，请查阅其官方文档。
 
 ## 致谢
 
@@ -270,6 +346,7 @@ graph TD
 以及感谢Aider和Gemini 解放双手，代码写起来飞一般的感觉～
 
 ## Support & Sponsoring
+
 如果该项目对您有帮助，请考虑 buy a coffe for me , 非常感谢您的支持！
 
 <table>
@@ -278,7 +355,6 @@ graph TD
     <td><img src="static/wx_support.png" width="200" alt="WeChat Pay" /></td>
   </tr>
 </table>
-
 
 ## ⚠️ 注意事项
 
