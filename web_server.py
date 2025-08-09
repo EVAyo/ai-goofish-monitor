@@ -6,9 +6,11 @@ import glob
 import asyncio
 import signal
 import sys
+import base64
 from contextlib import asynccontextmanager
 from dotenv import dotenv_values
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from src.prompt_utils import generate_criteria, update_config_with_new_task
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -66,6 +68,21 @@ class LoginStateUpdate(BaseModel):
     content: str
 
 
+class NotificationSettings(BaseModel):
+    NTFY_TOPIC_URL: Optional[str] = None
+    GOTIFY_URL: Optional[str] = None
+    GOTIFY_TOKEN: Optional[str] = None
+    BARK_URL: Optional[str] = None
+    WX_BOT_URL: Optional[str] = None
+    WEBHOOK_URL: Optional[str] = None
+    WEBHOOK_METHOD: Optional[str] = "POST"
+    WEBHOOK_HEADERS: Optional[str] = None
+    WEBHOOK_CONTENT_TYPE: Optional[str] = "JSON"
+    WEBHOOK_QUERY_PARAMETERS: Optional[str] = None
+    WEBHOOK_BODY: Optional[str] = None
+    PCURL_TO_MOBILE: Optional[bool] = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -96,14 +113,203 @@ async def lifespan(app: FastAPI):
     await _set_all_tasks_stopped_in_config()
 
 
+def load_notification_settings():
+    """Load notification settings from .env file"""
+    from dotenv import dotenv_values
+    config = dotenv_values(".env")
+    
+    return {
+        "NTFY_TOPIC_URL": config.get("NTFY_TOPIC_URL", ""),
+        "GOTIFY_URL": config.get("GOTIFY_URL", ""),
+        "GOTIFY_TOKEN": config.get("GOTIFY_TOKEN", ""),
+        "BARK_URL": config.get("BARK_URL", ""),
+        "WX_BOT_URL": config.get("WX_BOT_URL", ""),
+        "WEBHOOK_URL": config.get("WEBHOOK_URL", ""),
+        "WEBHOOK_METHOD": config.get("WEBHOOK_METHOD", "POST"),
+        "WEBHOOK_HEADERS": config.get("WEBHOOK_HEADERS", ""),
+        "WEBHOOK_CONTENT_TYPE": config.get("WEBHOOK_CONTENT_TYPE", "JSON"),
+        "WEBHOOK_QUERY_PARAMETERS": config.get("WEBHOOK_QUERY_PARAMETERS", ""),
+        "WEBHOOK_BODY": config.get("WEBHOOK_BODY", ""),
+        "PCURL_TO_MOBILE": config.get("PCURL_TO_MOBILE", "true").lower() == "true"
+    }
+
+
+def save_notification_settings(settings: dict):
+    """Save notification settings to .env file"""
+    env_file = ".env"
+    env_lines = []
+    
+    # Read existing .env file
+    if os.path.exists(env_file):
+        with open(env_file, 'r', encoding='utf-8') as f:
+            env_lines = f.readlines()
+    
+    # Update or add notification settings
+    setting_keys = [
+        "NTFY_TOPIC_URL", "GOTIFY_URL", "GOTIFY_TOKEN", "BARK_URL", 
+        "WX_BOT_URL", "WEBHOOK_URL", "WEBHOOK_METHOD", "WEBHOOK_HEADERS",
+        "WEBHOOK_CONTENT_TYPE", "WEBHOOK_QUERY_PARAMETERS", "WEBHOOK_BODY", "PCURL_TO_MOBILE"
+    ]
+    
+    # Create a dictionary of existing settings
+    existing_settings = {}
+    for line in env_lines:
+        if '=' in line and not line.strip().startswith('#'):
+            key, value = line.split('=', 1)
+            existing_settings[key.strip()] = value.strip()
+    
+    # Update with new settings
+    existing_settings.update(settings)
+    
+    # Write back to file
+    with open(env_file, 'w', encoding='utf-8') as f:
+        for key in setting_keys:
+            value = existing_settings.get(key, "")
+            if key == "PCURL_TO_MOBILE":
+                f.write(f"{key}={str(value).lower()}\n")
+            else:
+                f.write(f"{key}={value}\n")
+        
+        # Write any other existing settings that are not notification settings
+        for key, value in existing_settings.items():
+            if key not in setting_keys:
+                f.write(f"{key}={value}\n")
+
+
+def load_ai_settings():
+    """Load AI model settings from .env file"""
+    from dotenv import dotenv_values
+    config = dotenv_values(".env")
+    
+    return {
+        "OPENAI_API_KEY": config.get("OPENAI_API_KEY", ""),
+        "OPENAI_BASE_URL": config.get("OPENAI_BASE_URL", ""),
+        "OPENAI_MODEL_NAME": config.get("OPENAI_MODEL_NAME", ""),
+        "PROXY_URL": config.get("PROXY_URL", "")
+    }
+
+
+def save_ai_settings(settings: dict):
+    """Save AI model settings to .env file"""
+    env_file = ".env"
+    env_lines = []
+    
+    # Read existing .env file
+    if os.path.exists(env_file):
+        with open(env_file, 'r', encoding='utf-8') as f:
+            env_lines = f.readlines()
+    
+    # Update or add AI settings
+    setting_keys = [
+        "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL_NAME", "PROXY_URL"
+    ]
+    
+    # Create a dictionary of existing settings
+    existing_settings = {}
+    for line in env_lines:
+        if '=' in line and not line.strip().startswith('#'):
+            key, value = line.split('=', 1)
+            existing_settings[key.strip()] = value.strip()
+    
+    # Update with new settings
+    existing_settings.update(settings)
+    
+    # Write back to file
+    with open(env_file, 'w', encoding='utf-8') as f:
+        for key in setting_keys:
+            value = existing_settings.get(key, "")
+            f.write(f"{key}={value}\n")
+        
+        # Write any other existing settings that are not AI settings
+        for key, value in existing_settings.items():
+            if key not in setting_keys:
+                f.write(f"{key}={value}\n")
+
+
 app = FastAPI(title="闲鱼智能监控机器人", lifespan=lifespan)
+
+# --- 认证配置 ---
+security = HTTPBasic()
+
+# 从环境变量读取认证凭据
+def get_auth_credentials():
+    """从环境变量获取认证凭据"""
+    username = os.getenv("WEB_USERNAME", "admin")
+    password = os.getenv("WEB_PASSWORD", "admin123")
+    return username, password
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    """验证Basic认证凭据"""
+    username, password = get_auth_credentials()
+    
+    # 检查用户名和密码是否匹配
+    if credentials.username == username and credentials.password == password:
+        return credentials.username
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证失败",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 # --- Globals for process and scheduler management ---
 scraper_processes = {}  # 将单个进程变量改为字典，以管理多个任务进程 {task_id: process}
 scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# 自定义静态文件处理器，添加认证
+class AuthenticatedStaticFiles(StaticFiles):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    async def __call__(self, scope, receive, send):
+        # 检查认证
+        headers = dict(scope.get("headers", []))
+        authorization = headers.get(b"authorization", b"").decode()
+        
+        if not authorization.startswith("Basic "):
+            await send({
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"www-authenticate", b"Basic realm=Authorization Required"),
+                    (b"content-type", b"text/plain"),
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b"Authentication required",
+            })
+            return
+        
+        # 验证凭据
+        try:
+            credentials = base64.b64decode(authorization[6:]).decode()
+            username, password = credentials.split(":", 1)
+            
+            expected_username, expected_password = get_auth_credentials()
+            if username != expected_username or password != expected_password:
+                raise ValueError("Invalid credentials")
+                
+        except Exception:
+            await send({
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"www-authenticate", b"Basic realm=Authorization Required"),
+                    (b"content-type", b"text/plain"),
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b"Authentication failed",
+            })
+            return
+        
+        # 认证成功，继续处理静态文件
+        await super().__call__(scope, receive, send)
+
+# Mount static files with authentication
+app.mount("/static", AuthenticatedStaticFiles(directory="static"), name="static")
 
 # Setup templates
 templates = Jinja2Templates(directory="templates")
@@ -222,8 +428,18 @@ async def reload_scheduler_jobs():
         scheduler.print_jobs()
 
 
+@app.get("/health")
+async def health_check():
+    """健康检查端点，不需要认证"""
+    return {"status": "healthy", "message": "服务正常运行"}
+
+@app.get("/auth/status")
+async def auth_status(username: str = Depends(verify_credentials)):
+    """检查认证状态"""
+    return {"authenticated": True, "username": username}
+
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
+async def read_root(request: Request, username: str = Depends(verify_credentials)):
     """
     提供 Web UI 的主页面。
     """
@@ -234,7 +450,7 @@ async def read_root(request: Request):
 CONFIG_FILE = "config.json"
 
 @app.get("/api/tasks")
-async def get_tasks():
+async def get_tasks(username: str = Depends(verify_credentials)):
     """
     读取并返回 config.json 中的所有任务。
     """
@@ -255,7 +471,7 @@ async def get_tasks():
 
 
 @app.post("/api/tasks/generate", response_model=dict)
-async def generate_task(req: TaskGenerateRequest):
+async def generate_task(req: TaskGenerateRequest, username: str = Depends(verify_credentials)):
     """
     使用 AI 生成一个新的分析标准文件，并据此创建一个新任务。
     """
@@ -321,7 +537,7 @@ async def generate_task(req: TaskGenerateRequest):
 
 
 @app.post("/api/tasks", response_model=dict)
-async def create_task(task: Task):
+async def create_task(task: Task, username: str = Depends(verify_credentials)):
     """
     创建一个新任务并将其添加到 config.json。
     """
@@ -348,7 +564,7 @@ async def create_task(task: Task):
 
 
 @app.patch("/api/tasks/{task_id}", response_model=dict)
-async def update_task(task_id: int, task_update: TaskUpdate):
+async def update_task(task_id: int, task_update: TaskUpdate, username: str = Depends(verify_credentials)):
     """
     更新指定ID任务的属性。
     """
@@ -462,7 +678,7 @@ async def update_task_running_status(task_id: int, is_running: bool):
 
 
 @app.post("/api/tasks/start/{task_id}", response_model=dict)
-async def start_single_task(task_id: int):
+async def start_single_task(task_id: int, username: str = Depends(verify_credentials)):
     """启动单个任务。"""
     try:
         async with aiofiles.open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -481,7 +697,7 @@ async def start_single_task(task_id: int):
 
 
 @app.post("/api/tasks/stop/{task_id}", response_model=dict)
-async def stop_single_task(task_id: int):
+async def stop_single_task(task_id: int, username: str = Depends(verify_credentials)):
     """停止单个任务。"""
     await stop_task_process(task_id)
     return {"message": f"任务ID {task_id} 已发送停止信号。"}
@@ -490,7 +706,7 @@ async def stop_single_task(task_id: int):
 
 
 @app.get("/api/logs")
-async def get_logs(from_pos: int = 0):
+async def get_logs(from_pos: int = 0, username: str = Depends(verify_credentials)):
     """
     获取爬虫日志文件的内容。支持从指定位置增量读取。
     """
@@ -529,7 +745,7 @@ async def get_logs(from_pos: int = 0):
 
 
 @app.delete("/api/logs", response_model=dict)
-async def clear_logs():
+async def clear_logs(username: str = Depends(verify_credentials)):
     """
     清空日志文件内容。
     """
@@ -539,7 +755,7 @@ async def clear_logs():
 
     try:
         # 使用 'w' 模式打开文件会清空内容
-        async with aiofiles.open(log_file_path, 'w') as f:
+        async with aiofiles.open(log_file_path, 'w', encoding='utf-8') as f:
             await f.write("")
         return {"message": "日志已成功清空。"}
     except Exception as e:
@@ -547,7 +763,7 @@ async def clear_logs():
 
 
 @app.delete("/api/tasks/{task_id}", response_model=dict)
-async def delete_task(task_id: int):
+async def delete_task(task_id: int, username: str = Depends(verify_credentials)):
     """
     从 config.json 中删除指定ID的任务。
     """
@@ -588,7 +804,7 @@ async def delete_task(task_id: int):
 
 
 @app.get("/api/results/files")
-async def list_result_files():
+async def list_result_files(username: str = Depends(verify_credentials)):
     """
     列出所有生成的 .jsonl 结果文件。
     """
@@ -599,8 +815,27 @@ async def list_result_files():
     return {"files": files}
 
 
+@app.delete("/api/results/files/{filename}", response_model=dict)
+async def delete_result_file(filename: str, username: str = Depends(verify_credentials)):
+    """
+    删除指定的结果文件。
+    """
+    if not filename.endswith(".jsonl") or "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="无效的文件名。")
+    
+    filepath = os.path.join("jsonl", filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="结果文件未找到。")
+    
+    try:
+        os.remove(filepath)
+        return {"message": f"结果文件 '{filename}' 已成功删除。"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除结果文件时出错: {e}")
+
+
 @app.get("/api/results/{filename}")
-async def get_result_file_content(filename: str, page: int = 1, limit: int = 20, recommended_only: bool = False, sort_by: str = "crawl_time", sort_order: str = "desc"):
+async def get_result_file_content(filename: str, page: int = 1, limit: int = 20, recommended_only: bool = False, sort_by: str = "crawl_time", sort_order: str = "desc", username: str = Depends(verify_credentials)):
     """
     读取指定的 .jsonl 文件内容，支持分页、筛选和排序。
     """
@@ -659,7 +894,7 @@ async def get_result_file_content(filename: str, page: int = 1, limit: int = 20,
 
 
 @app.get("/api/settings/status")
-async def get_system_status():
+async def get_system_status(username: str = Depends(verify_credentials)):
     """
     检查系统关键文件和配置的状态。
     """
@@ -701,7 +936,7 @@ async def get_system_status():
 PROMPTS_DIR = "prompts"
 
 @app.get("/api/prompts")
-async def list_prompts():
+async def list_prompts(username: str = Depends(verify_credentials)):
     """
     列出 prompts/ 目录下的所有 .txt 文件。
     """
@@ -711,7 +946,7 @@ async def list_prompts():
 
 
 @app.get("/api/prompts/{filename}")
-async def get_prompt_content(filename: str):
+async def get_prompt_content(filename: str, username: str = Depends(verify_credentials)):
     """
     获取指定 prompt 文件的内容。
     """
@@ -728,7 +963,7 @@ async def get_prompt_content(filename: str):
 
 
 @app.put("/api/prompts/{filename}")
-async def update_prompt_content(filename: str, prompt_update: PromptUpdate):
+async def update_prompt_content(filename: str, prompt_update: PromptUpdate, username: str = Depends(verify_credentials)):
     """
     更新指定 prompt 文件的内容。
     """
@@ -748,7 +983,7 @@ async def update_prompt_content(filename: str, prompt_update: PromptUpdate):
 
 
 @app.post("/api/login-state", response_model=dict)
-async def update_login_state(data: LoginStateUpdate):
+async def update_login_state(data: LoginStateUpdate, username: str = Depends(verify_credentials)):
     """
     接收前端发送的登录状态JSON字符串，并保存到 xianyu_state.json。
     """
@@ -768,7 +1003,7 @@ async def update_login_state(data: LoginStateUpdate):
 
 
 @app.delete("/api/login-state", response_model=dict)
-async def delete_login_state():
+async def delete_login_state(username: str = Depends(verify_credentials)):
     """
     删除 xianyu_state.json 文件。
     """
@@ -780,6 +1015,92 @@ async def delete_login_state():
         except OSError as e:
             raise HTTPException(status_code=500, detail=f"删除登录状态文件时出错: {e}")
     return {"message": "登录状态文件不存在，无需删除。"}
+
+
+@app.get("/api/settings/notifications", response_model=dict)
+async def get_notification_settings(username: str = Depends(verify_credentials)):
+    """
+    获取通知设置。
+    """
+    return load_notification_settings()
+
+
+@app.put("/api/settings/notifications", response_model=dict)
+async def update_notification_settings(settings: NotificationSettings, username: str = Depends(verify_credentials)):
+    """
+    更新通知设置。
+    """
+    try:
+        # Convert Pydantic model to dict, excluding None values
+        settings_dict = settings.dict(exclude_none=True)
+        save_notification_settings(settings_dict)
+        return {"message": "通知设置已成功更新。"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新通知设置时出错: {e}")
+
+
+@app.get("/api/settings/ai", response_model=dict)
+async def get_ai_settings(username: str = Depends(verify_credentials)):
+    """
+    获取AI模型设置。
+    """
+    return load_ai_settings()
+
+
+@app.put("/api/settings/ai", response_model=dict)
+async def update_ai_settings(settings: dict, username: str = Depends(verify_credentials)):
+    """
+    更新AI模型设置。
+    """
+    try:
+        save_ai_settings(settings)
+        return {"message": "AI模型设置已成功更新。"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新AI模型设置时出错: {e}")
+
+
+@app.post("/api/settings/ai/test", response_model=dict)
+async def test_ai_settings(settings: dict, username: str = Depends(verify_credentials)):
+    """
+    测试AI模型设置是否有效。
+    """
+    try:
+        from openai import OpenAI
+        import httpx
+        
+        # 创建OpenAI客户端
+        client_params = {
+            "api_key": settings.get("OPENAI_API_KEY", ""),
+            "base_url": settings.get("OPENAI_BASE_URL", ""),
+            "timeout": httpx.Timeout(30.0),
+        }
+        
+        # 如果有代理设置
+        proxy_url = settings.get("PROXY_URL", "")
+        if proxy_url:
+            client_params["http_client"] = httpx.Client(proxy=proxy_url)
+        
+        client = OpenAI(**client_params)
+        
+        # 测试连接
+        response = client.chat.completions.create(
+            model=settings.get("OPENAI_MODEL_NAME", ""),
+            messages=[
+                {"role": "user", "content": "Hello, this is a test message to verify the connection."}
+            ],
+            max_tokens=10
+        )
+        
+        return {
+            "success": True, 
+            "message": "AI模型连接测试成功！",
+            "response": response.choices[0].message.content if response.choices else "No response"
+        }
+    except Exception as e:
+        return {
+            "success": False, 
+            "message": f"AI模型连接测试失败: {str(e)}"
+        }
 
 
 if __name__ == "__main__":

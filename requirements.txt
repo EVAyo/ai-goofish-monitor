@@ -9,3 +9,9 @@ aiofiles
 python-socks
 apscheduler
 httpx[socks]
+Pillow
+pyzbar
+qrcode
+pytest
+pytest-asyncio
+coverage
