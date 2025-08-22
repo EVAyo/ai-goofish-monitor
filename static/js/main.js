@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function() {
     const mainContent = document.getElementById('main-content');
     const navLinks = document.querySelectorAll('.nav-link');
     let logRefreshInterval = null;
@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <option value="asc">升序</option>
                     </select>
                     <button id="refresh-results-btn" class="control-button">🔄 刷新</button>
+                    <button id="delete-results-btn" class="control-button danger-btn" disabled>🗑️ 删除结果</button>
                 </div>
                 <div id="results-grid-container">
                     <p>请先选择一个结果文件。</p>
@@ -65,6 +66,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div id="system-status-container"><p>正在加载状态...</p></div>
                 </div>
                 <div class="settings-card">
+                    <h3>通知配置</h3>
+                    <div id="notification-settings-container">
+                        <p>正在加载通知配置...</p>
+                    </div>
+                </div>
+                <div class="settings-card">
                     <h3>Prompt 管理</h3>
                     <div class="prompt-manager">
                         <div class="prompt-list-container">
@@ -81,6 +88,85 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     // --- API Functions ---
+    async function fetchNotificationSettings() {
+        try {
+            const response = await fetch('/api/settings/notifications');
+            if (!response.ok) throw new Error('无法获取通知设置');
+            return await response.json();
+        } catch (error) {
+            console.error(error);
+            return null;
+        }
+    }
+
+    async function fetchAISettings() {
+        try {
+            const response = await fetch('/api/settings/ai');
+            if (!response.ok) throw new Error('无法获取AI设置');
+            return await response.json();
+        } catch (error) {
+            console.error(error);
+            return null;
+        }
+    }
+
+    async function updateAISettings(settings) {
+        try {
+            const response = await fetch('/api/settings/ai', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings),
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '更新AI设置失败');
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('无法更新AI设置:', error);
+            alert(`错误: ${error.message}`);
+            return null;
+        }
+    }
+
+    async function testAISettings(settings) {
+        try {
+            const response = await fetch('/api/settings/ai/test', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings),
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '测试AI设置失败');
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('无法测试AI设置:', error);
+            alert(`错误: ${error.message}`);
+            return null;
+        }
+    }
+
+    async function updateNotificationSettings(settings) {
+        try {
+            const response = await fetch('/api/settings/notifications', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings),
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '更新通知设置失败');
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('无法更新通知设置:', error);
+            alert(`错误: ${error.message}`);
+            return null;
+        }
+    }
+
     async function fetchPrompts() {
         try {
             const response = await fetch('/api/prompts');
@@ -243,6 +329,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    async function deleteResultFile(filename) {
+        try {
+            const response = await fetch(`/api/results/files/${filename}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '删除结果文件失败');
+            }
+            return await response.json();
+        } catch (error) {
+            console.error(`无法删除结果文件 ${filename}:`, error);
+            alert(`错误: ${error.message}`);
+            return null;
+        }
+    }
+
     async function fetchResultContent(filename, recommendedOnly, sortBy, sortOrder) {
         try {
             const params = new URLSearchParams({
@@ -345,6 +448,134 @@ document.addEventListener('DOMContentLoaded', function () {
         container.innerHTML = content;
     }
 
+    function renderNotificationSettings(settings) {
+        if (!settings) return '<p>无法加载通知设置。</p>';
+
+        return `
+            <form id="notification-settings-form">
+                <div class="form-group">
+                    <label for="ntfy-topic-url">Ntfy Topic URL</label>
+                    <input type="text" id="ntfy-topic-url" name="NTFY_TOPIC_URL" value="${settings.NTFY_TOPIC_URL || ''}" placeholder="例如: https://ntfy.sh/your_topic">
+                    <p class="form-hint">用于发送通知到 ntfy.sh 服务</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="gotify-url">Gotify URL</label>
+                    <input type="text" id="gotify-url" name="GOTIFY_URL" value="${settings.GOTIFY_URL || ''}" placeholder="例如: https://push.example.de">
+                    <p class="form-hint">Gotify 服务地址</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="gotify-token">Gotify Token</label>
+                    <input type="text" id="gotify-token" name="GOTIFY_TOKEN" value="${settings.GOTIFY_TOKEN || ''}" placeholder="例如: your_gotify_token">
+                    <p class="form-hint">Gotify 应用的 Token</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="bark-url">Bark URL</label>
+                    <input type="text" id="bark-url" name="BARK_URL" value="${settings.BARK_URL || ''}" placeholder="例如: https://api.day.app/your_key">
+                    <p class="form-hint">Bark 推送地址</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="wx-bot-url">企业微信机器人 URL</label>
+                    <input type="text" id="wx-bot-url" name="WX_BOT_URL" value="${settings.WX_BOT_URL || ''}" placeholder="例如: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key">
+                    <p class="form-hint">企业微信机器人的 Webhook 地址</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="webhook-url">通用 Webhook URL</label>
+                    <input type="text" id="webhook-url" name="WEBHOOK_URL" value="${settings.WEBHOOK_URL || ''}" placeholder="例如: https://your-webhook-url.com/endpoint">
+                    <p class="form-hint">通用 Webhook 的 URL 地址</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="webhook-method">Webhook 方法</label>
+                    <select id="webhook-method" name="WEBHOOK_METHOD">
+                        <option value="POST" ${settings.WEBHOOK_METHOD === 'POST' ? 'selected' : ''}>POST</option>
+                        <option value="GET" ${settings.WEBHOOK_METHOD === 'GET' ? 'selected' : ''}>GET</option>
+                    </select>
+                    <p class="form-hint">Webhook 请求方法</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="webhook-headers">Webhook 请求头 (JSON)</label>
+                    <textarea id="webhook-headers" name="WEBHOOK_HEADERS" rows="3" placeholder='例如: {"Authorization": "Bearer token"}'>${settings.WEBHOOK_HEADERS || ''}</textarea>
+                    <p class="form-hint">必须是有效的 JSON 字符串</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="webhook-content-type">Webhook 内容类型</label>
+                    <select id="webhook-content-type" name="WEBHOOK_CONTENT_TYPE">
+                        <option value="JSON" ${settings.WEBHOOK_CONTENT_TYPE === 'JSON' ? 'selected' : ''}>JSON</option>
+                        <option value="FORM" ${settings.WEBHOOK_CONTENT_TYPE === 'FORM' ? 'selected' : ''}>FORM</option>
+                    </select>
+                    <p class="form-hint">POST 请求的内容类型</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="webhook-query-parameters">Webhook 查询参数 (JSON)</label>
+                    <textarea id="webhook-query-parameters" name="WEBHOOK_QUERY_PARAMETERS" rows="3" placeholder='例如: {"param1": "value1"}'>${settings.WEBHOOK_QUERY_PARAMETERS || ''}</textarea>
+                    <p class="form-hint">GET 请求的查询参数，支持 \${title} 和 \${content} 占位符</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="webhook-body">Webhook 请求体 (JSON)</label>
+                    <textarea id="webhook-body" name="WEBHOOK_BODY" rows="3" placeholder='例如: {"message": "\${content}"}'>${settings.WEBHOOK_BODY || ''}</textarea>
+                    <p class="form-hint">POST 请求的请求体，支持 \${title} 和 \${content} 占位符</p>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="pcurl-to-mobile" name="PCURL_TO_MOBILE" ${settings.PCURL_TO_MOBILE ? 'checked' : ''}>
+                        将电脑版链接转换为手机版
+                    </label>
+                    <p class="form-hint">在通知中将电脑版商品链接转换为手机版</p>
+                </div>
+                
+                <button type="submit" class="control-button primary-btn">保存通知设置</button>
+            </form>
+        `;
+    }
+
+    function renderAISettings(settings) {
+        if (!settings) return '<p>无法加载AI设置。</p>';
+
+        return `
+            <form id="ai-settings-form">
+                <div class="form-group">
+                    <label for="openai-api-key">API Key *</label>
+                    <input type="password" id="openai-api-key" name="OPENAI_API_KEY" value="${settings.OPENAI_API_KEY || ''}" placeholder="例如: sk-..." required>
+                    <p class="form-hint">你的AI模型服务商提供的API Key</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="openai-base-url">API Base URL *</label>
+                    <input type="text" id="openai-base-url" name="OPENAI_BASE_URL" value="${settings.OPENAI_BASE_URL || ''}" placeholder="例如: https://api.openai.com/v1/" required>
+                    <p class="form-hint">AI模型的API接口地址，必须兼容OpenAI格式</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="openai-model-name">模型名称 *</label>
+                    <input type="text" id="openai-model-name" name="OPENAI_MODEL_NAME" value="${settings.OPENAI_MODEL_NAME || ''}" placeholder="例如: gemini-2.5-pro" required>
+                    <p class="form-hint">你要使用的具体模型名称，必须支持图片分析</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="proxy-url">代理地址 (可选)</label>
+                    <input type="text" id="proxy-url" name="PROXY_URL" value="${settings.PROXY_URL || ''}" placeholder="例如: http://127.0.0.1:7890">
+                    <p class="form-hint">HTTP/S代理地址，支持 http 和 socks5 格式</p>
+                </div>
+                
+                <div class="form-group">
+                    <button type="button" id="test-ai-settings-btn" class="control-button">测试连接（浏览器）</button>
+                    <button type="button" id="test-ai-settings-backend-btn" class="control-button">测试连接（后端容器）</button>
+                    <button type="submit" class="control-button primary-btn">保存AI设置</button>
+                </div>
+            </form>
+        `;
+    }
+
     async function refreshLoginStatusWidget() {
         const status = await fetchSystemStatus();
         if (status) {
@@ -405,27 +636,38 @@ document.addEventListener('DOMContentLoaded', function () {
             const crawlTime = item.爬取时间 ? new Date(item.爬取时间).toLocaleString('sv-SE').slice(0, 16) : '未知';
             const publishTime = info.发布时间 || '未知';
 
+            // Escape HTML to prevent XSS
+            const escapeHtml = (unsafe) => {
+                if (typeof unsafe !== 'string') return unsafe;
+                return unsafe
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+            };
+
             return `
-            <div class="result-card" data-item='${JSON.stringify(item)}'>
+            <div class="result-card" data-item='${escapeHtml(JSON.stringify(item))}'>
                 <div class="card-image">
-                    <a href="${info.商品链接 || '#'}" target="_blank"><img src="${imageUrl}" alt="${info.商品标题 || '商品图片'}" loading="lazy"></a>
+                    <a href="${escapeHtml(info.商品链接) || '#'}" target="_blank"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(info.商品标题) || '商品图片'}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWbvueJhzwvdGV4dD48L3N2Zz4=';"></a>
                 </div>
                 <div class="card-content">
-                    <h3 class="card-title"><a href="${info.商品链接 || '#'}" target="_blank" title="${info.商品标题 || ''}">${info.商品标题 || '无标题'}</a></h3>
-                    <p class="card-price">${info.当前售价 || '价格未知'}</p>
+                    <h3 class="card-title"><a href="${escapeHtml(info.商品链接) || '#'}" target="_blank" title="${escapeHtml(info.商品标题) || ''}">${escapeHtml(info.商品标题) || '无标题'}</a></h3>
+                    <p class="card-price">${escapeHtml(info.当前售价) || '价格未知'}</p>
                     <div class="card-ai-summary ${recommendationClass}">
-                        <strong>AI建议: ${recommendationText}</strong>
-                        <p title="${ai.reason || ''}">原因: ${ai.reason || '无分析'}</p>
+                        <strong>AI建议: ${escapeHtml(recommendationText)}</strong>
+                        <p title="${escapeHtml(ai.reason) || ''}">原因: ${escapeHtml(ai.reason) || '无分析'}</p>
                     </div>
                     <div class="card-footer">
                         <div>
-                            <span class="seller-info" title="${info.卖家昵称 || seller.卖家昵称 || '未知'}">卖家: ${info.卖家昵称 || seller.卖家昵称 || '未知'}</span>
+                            <span class="seller-info" title="${escapeHtml(info.卖家昵称) || escapeHtml(seller.卖家昵称) || '未知'}">卖家: ${escapeHtml(info.卖家昵称) || escapeHtml(seller.卖家昵称) || '未知'}</span>
                             <div class="time-info">
-                                <p>发布于: ${publishTime}</p>
-                                <p>抓取于: ${crawlTime}</p>
+                                <p>发布于: ${escapeHtml(publishTime)}</p>
+                                <p>抓取于: ${escapeHtml(crawlTime)}</p>
                             </div>
                         </div>
-                        <a href="${info.商品链接 || '#'}" target="_blank" class="action-btn">查看详情</a>
+                        <a href="${escapeHtml(info.商品链接) || '#'}" target="_blank" class="action-btn">查看详情</a>
                     </div>
                 </div>
             </div>
@@ -439,6 +681,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!tasks || tasks.length === 0) {
             return '<p>没有找到任何任务。请点击右上角“创建新任务”来添加一个。</p>';
         }
+
+        const refreshBtn = '<svg class="icon" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"  width="16" height="16"><path d="M914.17946 324.34283C854.308387 324.325508 750.895846 324.317788 750.895846 324.317788 732.045471 324.317788 716.764213 339.599801 716.764213 358.451121 716.764213 377.30244 732.045471 392.584453 750.895846 392.584453L955.787864 392.584453C993.448095 392.584453 1024 362.040424 1024 324.368908L1024 119.466667C1024 100.615347 1008.718742 85.333333 989.868367 85.333333 971.017993 85.333333 955.736735 100.615347 955.736735 119.466667L955.736735 256.497996C933.314348 217.628194 905.827487 181.795372 873.995034 149.961328 778.623011 54.584531 649.577119 0 511.974435 0 229.218763 0 0 229.230209 0 512 0 794.769791 229.218763 1024 511.974435 1024 794.730125 1024 1023.948888 794.769791 1023.948888 512 1023.948888 493.148681 1008.66763 477.866667 989.817256 477.866667 970.966881 477.866667 955.685623 493.148681 955.685623 512 955.685623 757.067153 757.029358 955.733333 511.974435 955.733333 266.91953 955.733333 68.263265 757.067153 68.263265 512 68.263265 266.932847 266.91953 68.266667 511.974435 68.266667 631.286484 68.266667 743.028524 115.531923 825.725634 198.233152 862.329644 234.839003 892.298522 277.528256 914.17946 324.34283L914.17946 324.34283Z" fill="#389BFF"></path></svg>'
 
         const tableHeader = `
             <thead>
@@ -480,7 +724,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td>${task.min_price || '不限'} - ${task.max_price || '不限'}</td>
                 <td>${task.personal_only ? '<span class="tag personal">个人闲置</span>' : ''}</td>
                 <td>${task.max_pages || 3}</td>
-                <td>${(task.ai_prompt_criteria_file || 'N/A').replace('prompts/', '')}</td>
+                <td><div class="criteria"><button class="refresh-criteria" title="重新生成AI标准" data-task-id="${task.id}">${refreshBtn}</button>${(task.ai_prompt_criteria_file || 'N/A').replace('prompts/', '')}</div></td>
                 <td>${task.cron || '未设置'}</td>
                 <td>
                     ${actionButton}
@@ -640,6 +884,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const selector = document.getElementById('result-file-selector');
         const checkbox = document.getElementById('recommended-only-checkbox');
         const refreshBtn = document.getElementById('refresh-results-btn');
+        const deleteBtn = document.getElementById('delete-results-btn');
         const sortBySelector = document.getElementById('sort-by-selector');
         const sortOrderSelector = document.getElementById('sort-order-selector');
 
@@ -664,6 +909,33 @@ document.addEventListener('DOMContentLoaded', function () {
             sortBySelector.addEventListener('change', fetchAndRenderResults);
             sortOrderSelector.addEventListener('change', fetchAndRenderResults);
             refreshBtn.addEventListener('click', fetchAndRenderResults);
+
+            // Enable delete button when a file is selected
+            const updateDeleteButtonState = () => {
+                deleteBtn.disabled = !selector.value;
+            };
+            selector.addEventListener('change', updateDeleteButtonState);
+            // 初始化时也更新一次删除按钮状态
+            updateDeleteButtonState();
+
+            // Delete button functionality
+            deleteBtn.addEventListener('click', async () => {
+                const selectedFile = selector.value;
+                if (!selectedFile) {
+                    alert('请先选择一个结果文件。');
+                    return;
+                }
+
+                if (confirm(`你确定要删除结果文件 "${selectedFile}" 吗？此操作不可恢复。`)) {
+                    const result = await deleteResultFile(selectedFile);
+                    if (result) {
+                        alert(result.message);
+                        // Refresh the file list
+                        await initializeResultsView();
+                    }
+                }
+            });
+
             // Initial load
             await fetchAndRenderResults();
         } else {
@@ -678,7 +950,38 @@ document.addEventListener('DOMContentLoaded', function () {
         const status = await fetchSystemStatus();
         statusContainer.innerHTML = renderSystemStatus(status);
 
-        // 2. Setup Prompt Editor
+        // 2. Render Notification Settings
+        const notificationContainer = document.getElementById('notification-settings-container');
+        const notificationSettings = await fetchNotificationSettings();
+        if (notificationSettings !== null) {
+            notificationContainer.innerHTML = renderNotificationSettings(notificationSettings);
+        } else {
+            notificationContainer.innerHTML = '<p>加载通知配置失败。请检查服务器是否正常运行。</p>';
+        }
+
+        // 3. Render AI Settings
+        const aiContainer = document.createElement('div');
+        aiContainer.className = 'settings-card';
+        aiContainer.innerHTML = `
+            <h3>AI模型配置</h3>
+            <div id="ai-settings-container">
+                <p>正在加载AI配置...</p>
+            </div>
+        `;
+
+        // Insert AI settings card before Prompt Management
+        const promptCard = document.querySelector('.settings-card h3').closest('.settings-card');
+        promptCard.parentNode.insertBefore(aiContainer, promptCard);
+
+        const aiSettingsContainer = document.getElementById('ai-settings-container');
+        const aiSettings = await fetchAISettings();
+        if (aiSettings !== null) {
+            aiSettingsContainer.innerHTML = renderAISettings(aiSettings);
+        } else {
+            aiSettingsContainer.innerHTML = '<p>加载AI配置失败。请检查服务器是否正常运行。</p>';
+        }
+
+        // 4. Setup Prompt Editor
         const promptSelector = document.getElementById('prompt-selector');
         const promptEditor = document.getElementById('prompt-editor');
         const savePromptBtn = document.getElementById('save-prompt-btn');
@@ -686,8 +989,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const prompts = await fetchPrompts();
         if (prompts && prompts.length > 0) {
             promptSelector.innerHTML = '<option value="">-- 请选择 --</option>' + prompts.map(p => `<option value="${p}">${p}</option>`).join('');
-        } else {
+        } else if (prompts && prompts.length === 0) {
             promptSelector.innerHTML = '<option value="">没有找到Prompt文件</option>';
+        } else {
+            // prompts is null or undefined, which means fetch failed
+            promptSelector.innerHTML = '<option value="">加载Prompt文件列表失败</option>';
         }
 
         promptSelector.addEventListener('change', async () => {
@@ -731,11 +1037,151 @@ document.addEventListener('DOMContentLoaded', function () {
             savePromptBtn.disabled = false;
             savePromptBtn.textContent = '保存更改';
         });
+
+        // 5. Add event listener for notification settings form
+        const notificationForm = document.getElementById('notification-settings-form');
+        if (notificationForm) {
+            notificationForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                // Collect form data
+                const formData = new FormData(notificationForm);
+                const settings = {};
+
+                // Handle regular inputs
+                for (let [key, value] of formData.entries()) {
+                    if (key === 'PCURL_TO_MOBILE') {
+                        settings[key] = value === 'on';
+                    } else {
+                        settings[key] = value || '';
+                    }
+                }
+
+                // Handle unchecked checkboxes (they don't appear in FormData)
+                const pcurlCheckbox = document.getElementById('pcurl-to-mobile');
+                if (pcurlCheckbox && !pcurlCheckbox.checked) {
+                    settings.PCURL_TO_MOBILE = false;
+                }
+
+                // Save settings
+                const saveBtn = notificationForm.querySelector('button[type="submit"]');
+                const originalText = saveBtn.textContent;
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+
+                const result = await updateNotificationSettings(settings);
+                if (result) {
+                    alert(result.message || "通知设置已保存！");
+                }
+
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
+            });
+        }
+
+        // 6. Add event listener for AI settings form
+        const aiForm = document.getElementById('ai-settings-form');
+        if (aiForm) {
+            aiForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                // Collect form data
+                const formData = new FormData(aiForm);
+                const settings = {};
+
+                // Handle regular inputs
+                for (let [key, value] of formData.entries()) {
+                    settings[key] = value || '';
+                }
+
+                // Save settings
+                const saveBtn = aiForm.querySelector('button[type="submit"]');
+                const originalText = saveBtn.textContent;
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+
+                const result = await updateAISettings(settings);
+                if (result) {
+                    alert(result.message || "AI设置已保存！");
+                }
+
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalText;
+            });
+
+            // Add event listener for AI settings test button (browser)
+            const testBtn = document.getElementById('test-ai-settings-btn');
+            if (testBtn) {
+                testBtn.addEventListener('click', async () => {
+                    // Collect form data
+                    const formData = new FormData(aiForm);
+                    const settings = {};
+
+                    // Handle regular inputs
+                    for (let [key, value] of formData.entries()) {
+                        settings[key] = value || '';
+                    }
+
+                    // Test settings
+                    const originalText = testBtn.textContent;
+                    testBtn.disabled = true;
+                    testBtn.textContent = '测试中...';
+
+                    const result = await testAISettings(settings);
+                    if (result) {
+                        if (result.success) {
+                            alert(result.message || "AI模型连接测试成功！");
+                        } else {
+                            alert("浏览器测试失败: " + result.message);
+                        }
+                    }
+
+                    testBtn.disabled = false;
+                    testBtn.textContent = originalText;
+                });
+            }
+
+            // Add event listener for AI settings test button (backend)
+            const testBackendBtn = document.getElementById('test-ai-settings-backend-btn');
+            if (testBackendBtn) {
+                testBackendBtn.addEventListener('click', async () => {
+                    // Test backend settings without form data (uses env config)
+                    const originalText = testBackendBtn.textContent;
+                    testBackendBtn.disabled = true;
+                    testBackendBtn.textContent = '测试中...';
+
+                    try {
+                        const response = await fetch('/api/settings/ai/test/backend', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                        });
+
+                        if (!response.ok) {
+                            throw new Error('后端测试请求失败');
+                        }
+
+                        const result = await response.json();
+                        if (result.success) {
+                            alert(result.message || "后端AI模型连接测试成功！");
+                        } else {
+                            alert("后端容器测试失败: " + result.message);
+                        }
+                    } catch (error) {
+                        alert("后端容器测试错误: " + error.message);
+                    }
+
+                    testBackendBtn.disabled = false;
+                    testBackendBtn.textContent = originalText;
+                });
+            }
+        }
     }
 
     // Handle navigation clicks
     navLinks.forEach(link => {
-        link.addEventListener('click', function (e) {
+        link.addEventListener('click', function(e) {
             e.preventDefault();
             const hash = this.getAttribute('href');
             if (window.location.hash !== hash) {
@@ -862,6 +1308,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const container = document.getElementById('tasks-table-container');
             const tasks = await fetchTasks();
             container.innerHTML = renderTasksTable(tasks);
+        } else if (button.matches('.refresh-criteria')) {
+            const task = JSON.parse(row.dataset.task);
+            const modal = document.getElementById('refresh-criteria-modal');
+            const textarea = document.getElementById('refresh-criteria-description');
+            textarea.value = task['description'] || '';
+            modal.dataset.taskId = taskId;
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('visible'), 10);
         }
     });
 
@@ -898,9 +1352,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         closeModalBtn.addEventListener('click', closeModal);
         cancelBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (event) => {
+
+        let canClose = false;
+        modal.addEventListener('mousedown', event => {
+            canClose = event.target === modal;
+        });
+        modal.addEventListener('mouseup', (event) => {
             // Close if clicked on the overlay background
-            if (event.target === modal) {
+            if (canClose && event.target === modal) {
                 closeModal();
             }
         });
@@ -947,6 +1406,65 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
         });
+    }
+
+    // --- refresh criteria Modal Logic ---
+    const refreshCriteriaModal = document.getElementById('refresh-criteria-modal');
+    if (refreshCriteriaModal) {
+        const form = document.getElementById('refresh-criteria-form');
+        const closeModalBtn = document.getElementById('close-refresh-criteria-btn');
+        const cancelBtn = document.getElementById('cancel-refresh-criteria-btn');
+        const refreshBtn = document.getElementById('refresh-criteria-btn');
+
+        const closeModal = () => {
+            refreshCriteriaModal.classList.remove('visible');
+            setTimeout(() => {
+                refreshCriteriaModal.style.display = 'none';
+                form.reset(); // Reset form on close
+            }, 300);
+        };
+
+        closeModalBtn.addEventListener('click', closeModal);
+        cancelBtn.addEventListener('click', closeModal);
+
+        let canClose = false;
+        refreshCriteriaModal.addEventListener('mousedown', event => {
+            canClose = event.target === refreshCriteriaModal;
+        });
+        refreshCriteriaModal.addEventListener('mouseup', (event) => {
+            // Close if clicked on the overlay background
+            if (canClose && event.target === refreshCriteriaModal) {
+                closeModal();
+            }
+        });
+
+        refreshBtn.addEventListener('click', async () => {
+            if (form.checkValidity() === false) {
+                form.reportValidity();
+                return;
+            }
+            const btnText = refreshBtn.querySelector('.btn-text');
+            const spinner = refreshBtn.querySelector('.spinner');
+
+            // Show loading state
+            btnText.style.display = 'none';
+            spinner.style.display = 'inline-block';
+            refreshBtn.disabled = true;
+
+            const taskId = refreshCriteriaModal.dataset.taskId
+            const formData = new FormData(form);
+            const result = await updateTask(taskId, {description: formData.get('description')});
+
+            // Hide loading state
+            btnText.style.display = 'inline-block';
+            spinner.style.display = 'none';
+            refreshBtn.disabled = false;
+
+            if (result && result.task) {
+                closeModal();
+            }
+        })
+
     }
 
 

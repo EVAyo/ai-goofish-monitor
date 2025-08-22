@@ -15,6 +15,7 @@ from src.ai_handler import (
     download_all_images,
     get_ai_analysis,
     send_ntfy_notification,
+    cleanup_task_images,
 )
 from src.config import (
     AI_DEBUG_MODE,
@@ -202,6 +203,7 @@ async def scrape_xianyu(task_config: dict, debug_limit: int = 0):
 
             # --- 新增：检查是否存在验证弹窗 ---
             baxia_dialog = page.locator("div.baxia-dialog-mask")
+            middleware_widget = page.locator("div.J_MIDDLEWARE_FRAME_WIDGET")
             try:
                 # 等待弹窗在2秒内出现。如果出现，则执行块内代码。
                 await baxia_dialog.wait_for(state='visible', timeout=2000)
@@ -211,6 +213,24 @@ async def scrape_xianyu(task_config: dict, debug_limit: int = 0):
                 print("建议：")
                 print("1. 停止脚本一段时间再试。")
                 print("2. (推荐) 在 .env 文件中设置 RUN_HEADLESS=false，以非无头模式运行，这有助于绕过检测。")
+                print(f"任务 '{keyword}' 将在此处中止。")
+                print("===================================================================")
+                await browser.close()
+                return processed_item_count
+            except PlaywrightTimeoutError:
+                # 2秒内弹窗未出现，这是正常情况，继续执行
+                pass
+            
+            # 检查是否有J_MIDDLEWARE_FRAME_WIDGET覆盖层
+            try:
+                await middleware_widget.wait_for(state='visible', timeout=2000)
+                print("\n==================== CRITICAL BLOCK DETECTED ====================")
+                print("检测到闲鱼反爬虫验证弹窗 (J_MIDDLEWARE_FRAME_WIDGET)，无法继续操作。")
+                print("这通常是因为操作过于频繁或被识别为机器人。")
+                print("建议：")
+                print("1. 停止脚本一段时间再试。")
+                print("2. (推荐) 更新登录状态文件，确保登录状态有效。")
+                print("3. 降低任务执行频率，避免被识别为机器人。")
                 print(f"任务 '{keyword}' 将在此处中止。")
                 print("===================================================================")
                 await browser.close()
@@ -379,41 +399,63 @@ async def scrape_xianyu(task_config: dict, debug_limit: int = 0):
                             }
 
                             # --- START: Real-time AI Analysis & Notification ---
-                            print(f"   -> 开始对商品 #{item_data['商品ID']} 进行实时AI分析...")
-                            # 1. Download images
-                            image_urls = item_data.get('商品图片列表', [])
-                            downloaded_image_paths = await download_all_images(item_data['商品ID'], image_urls)
-
-                            # 2. Get AI analysis
-                            ai_analysis_result = None
-                            if ai_prompt_text:
-                                try:
-                                    # 注意：这里我们将整个记录传给AI，让它拥有最全的上下文
-                                    ai_analysis_result = await get_ai_analysis(final_record, downloaded_image_paths, prompt_text=ai_prompt_text)
-                                    if ai_analysis_result:
-                                        final_record['ai_analysis'] = ai_analysis_result
-                                        print(f"   -> AI分析完成。推荐状态: {ai_analysis_result.get('is_recommended')}")
-                                    else:
-                                        final_record['ai_analysis'] = {'error': 'AI analysis returned None after retries.'}
-                                except Exception as e:
-                                    print(f"   -> AI分析过程中发生严重错误: {e}")
-                                    final_record['ai_analysis'] = {'error': str(e)}
+                            from src.config import SKIP_AI_ANALYSIS
+                            
+                            # 检查是否跳过AI分析并直接发送通知
+                            if SKIP_AI_ANALYSIS:
+                                print(f"   -> 环境变量 SKIP_AI_ANALYSIS 已设置，跳过AI分析并直接发送通知...")
+                                # 下载图片
+                                image_urls = item_data.get('商品图片列表', [])
+                                downloaded_image_paths = await download_all_images(item_data['商品ID'], image_urls, task_config.get('task_name', 'default'))
+                                
+                                # 删除下载的图片文件，节省空间
+                                for img_path in downloaded_image_paths:
+                                    try:
+                                        if os.path.exists(img_path):
+                                            os.remove(img_path)
+                                            print(f"   [图片] 已删除临时图片文件: {img_path}")
+                                    except Exception as e:
+                                        print(f"   [图片] 删除图片文件时出错: {e}")
+                                
+                                # 直接发送通知，将所有商品标记为推荐
+                                print(f"   -> 商品已跳过AI分析，准备发送通知...")
+                                await send_ntfy_notification(item_data, "商品已跳过AI分析，直接通知")
                             else:
-                                print("   -> 任务未配置AI prompt，跳过分析。")
+                                print(f"   -> 开始对商品 #{item_data['商品ID']} 进行实时AI分析...")
+                                # 1. Download images
+                                image_urls = item_data.get('商品图片列表', [])
+                                downloaded_image_paths = await download_all_images(item_data['商品ID'], image_urls, task_config.get('task_name', 'default'))
 
-                            # 删除下载的图片文件，节省空间
-                            for img_path in downloaded_image_paths:
-                                try:
-                                    if os.path.exists(img_path):
-                                        os.remove(img_path)
-                                        print(f"   [图片] 已删除临时图片文件: {img_path}")
-                                except Exception as e:
-                                    print(f"   [图片] 删除图片文件时出错: {e}")
+                                # 2. Get AI analysis
+                                ai_analysis_result = None
+                                if ai_prompt_text:
+                                    try:
+                                        # 注意：这里我们将整个记录传给AI，让它拥有最全的上下文
+                                        ai_analysis_result = await get_ai_analysis(final_record, downloaded_image_paths, prompt_text=ai_prompt_text)
+                                        if ai_analysis_result:
+                                            final_record['ai_analysis'] = ai_analysis_result
+                                            print(f"   -> AI分析完成。推荐状态: {ai_analysis_result.get('is_recommended')}")
+                                        else:
+                                            final_record['ai_analysis'] = {'error': 'AI analysis returned None after retries.'}
+                                    except Exception as e:
+                                        print(f"   -> AI分析过程中发生严重错误: {e}")
+                                        final_record['ai_analysis'] = {'error': str(e)}
+                                else:
+                                    print("   -> 任务未配置AI prompt，跳过分析。")
 
-                            # 3. Send notification if recommended
-                            if ai_analysis_result and ai_analysis_result.get('is_recommended'):
-                                print(f"   -> 商品被AI推荐，准备发送通知...")
-                                await send_ntfy_notification(item_data, ai_analysis_result.get("reason", "无"))
+                                # 删除下载的图片文件，节省空间
+                                for img_path in downloaded_image_paths:
+                                    try:
+                                        if os.path.exists(img_path):
+                                            os.remove(img_path)
+                                            print(f"   [图片] 已删除临时图片文件: {img_path}")
+                                    except Exception as e:
+                                        print(f"   [图片] 删除图片文件时出错: {e}")
+
+                                # 3. Send notification if recommended
+                                if ai_analysis_result and ai_analysis_result.get('is_recommended'):
+                                    print(f"   -> 商品被AI推荐，准备发送通知...")
+                                    await send_ntfy_notification(item_data, ai_analysis_result.get("reason", "无"))
                             # --- END: Real-time AI Analysis & Notification ---
 
                             # 4. 保存包含AI结果的完整记录
@@ -460,5 +502,8 @@ async def scrape_xianyu(task_config: dict, debug_limit: int = 0):
             if debug_limit:
                 input("按回车键关闭浏览器...")
             await browser.close()
+
+    # 清理任务图片目录
+    cleanup_task_images(task_config.get('task_name', 'default'))
 
     return processed_item_count
